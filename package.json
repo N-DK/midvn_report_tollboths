@@ -1,0 +1,37 @@
+{
+    "name": "midvn_report_tollboths",
+    "version": "1.0.7",
+    "description": "report tollboths",
+    "main": "server.js",
+    "scripts": {
+        "start": "nodemon --inspect src/server.js --ignore src/common/*",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "NDK",
+        "mobicam",
+        "nodejs"
+    ],
+    "author": "NDK",
+    "license": "ISC",
+    "dependencies": {
+        "@turf/turf": "^7.0.0",
+        "axios": "^1.7.2",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "express": "^4.19.2",
+        "geolib": "^3.3.4",
+        "http": "^0.0.1-security",
+        "mongodb": "^6.7.0",
+        "mongoose": "^8.5.1",
+        "mqtt": "^5.7.1",
+        "mysql": "^2.18.1",
+        "redis": "^4.6.15",
+        "socket.io": "^4.7.5",
+        "socket.io-client": "^4.7.5",
+        "worker-thread": "^1.1.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.3"
+    }
+}
