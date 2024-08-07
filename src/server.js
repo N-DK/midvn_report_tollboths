@@ -8,6 +8,7 @@ const route = require('./routes');
 const db = require('./config/db');
 const MQTTService = require('./service/mqttService');
 const tollboth = require('./modules/tollboth');
+const redisClient = require('./service/redis');
 
 require('dotenv').config();
 const port = process.env.PORT || 3000;
@@ -30,7 +31,6 @@ const connectDB = async () => {
 const server = http.createServer(app);
 
 // connect redis
-const redisClient = require('./service/redis');
 redisClient.connect();
 
 // Connect DB, then start server

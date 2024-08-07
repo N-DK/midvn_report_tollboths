@@ -16,21 +16,11 @@ let cachedResults = null;
 const tollboth = {
     insertReport: async (car, point, tm, highwayName) => {
         process.push(car.dev_id);
-        // const end = getFileInfo('./src/common/reports')?.end;
-        // const lastItem = end
-        //     ? end + 1
-        //     : fs.readdirSync('./src/common/reports').length;
-        // const filePath = path.join(
-        //     './src/common/reports',
-        //     `report-${lastItem}.json`,
-        // );
         const query = `INSERT INTO report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at, update_at) VALUES ('${
             car.dev_id
         }', ${point[0]}, ${point[1]}, ${tm}, '${
             car.dri
         }', '${highwayName}', ${Date.now()}, ${Date.now()})`;
-
-        // fs.writeFileSync(filePath, query);
         const reportKey = `report:${car.dev_id}:${car.ref_id}:${tm}`;
         await redisClient.set(reportKey, query);
 
@@ -136,33 +126,7 @@ const tollboth = {
     },
 
     sendReport: () => {
-        // Gửi báo cáo mỗi 1'
         setInterval(async () => {
-            // const files = getFileInfo('./src/common/reports');
-
-            // if (files && files.length > 0) {
-            //     console.log(
-            //         `Đang gửi báo cáo từ ${files.start} đến ${files.end}`,
-            //     );
-            //     for (let i = files.start; i <= files.end; i++) {
-            //         const filePath = path.join(
-            //             './src/common/reports',
-            //             `report-${i}.json`,
-            //         );
-            //         if (fs.existsSync(filePath)) {
-            //             const query = fs.readFileSync(filePath, 'utf8');
-            //             con.query(query, (err, result) => {
-            //                 if (err) {
-            //                     console.log(err);
-            //                 } else {
-            //                     fs.unlinkSync(filePath);
-            //                 }
-            //             });
-            //         }
-            //     }
-            //     console.log(`Đã gửi ${files.length} báo cáo`);
-            // }
-
             const result = await redisClient.scan('0', 'MATCH', 'report:*');
             const keys = result.keys;
             if (keys.length > 0) {

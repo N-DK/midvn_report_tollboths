@@ -1,6 +1,6 @@
 {
     "name": "midvn_report_tollboths",
-    "version": "1.0.7",
+    "version": "1.0.2",
     "description": "report tollboths",
     "main": "server.js",
     "scripts": {
