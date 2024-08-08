@@ -41,18 +41,22 @@ class MQTTService {
 
         // Call the message callback function when message arrived
         this.mqttClient.on('message', (topic, message) => {
-            const data_vid = JSON.parse(message.toString());
-
-            // if (
-            //     this.cars.some(
-            //         (car) =>
-            //             car.dev_id === data_vid[0]?.id &&
-            //             car.isStopChecked &&
-            //             data_vid[0]?.state === '2' &&
-            //             Number(data_vid[0]?.sp) <= 0,
-            //     )
-            // )
-            //     return;
+            const data = JSON.parse(message.toString());
+            const vid = data[0]?.vid;
+            const sp = data[0]?.sp;
+            const state = data[0]?.state;
+            const lat = data[0]?.mlat;
+            const lng = data[0]?.mlng;
+            if (
+                state?.toString() === '2' &&
+                Number(sp) <= 0 &&
+                this.cars[vid]?.isStopChecked
+            ) {
+                console.log(
+                    `Car's stop checked ${this.cars[vid].vid} with speed ${sp} state ${state} lat ${lat} lng ${lng}`,
+                );
+                return;
+            }
 
             tollboth.report(this.cars, this.highways, message);
             if (this.messageCallback) this.messageCallback(topic, message);

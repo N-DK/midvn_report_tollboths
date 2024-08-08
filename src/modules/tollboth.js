@@ -12,29 +12,30 @@ let cachedResults = null;
 
 const tollboth = {
     insertReport: async (car, point, tm, highwayName) => {
-        process.push(car.dev_id);
-        // INSERT INTO report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at)
-        const query = ` VALUES ('${car.dev_id}', ${point[0]}, ${
-            point[1]
-        }, ${tm}, '${car.dri}', '${highwayName}', ${Date.now()})`;
-        const reportKey = `report:${car.dev_id}:${car.ref_id}:${tm}`;
-        const keys = await redisClient.keys(
-            `report:${car.dev_id}:${car.ref_id}:*`,
-        );
-        const key = keys[keys.length - 1];
-        const match = key?.split(':').pop();
+        try {
+            process.push(car.dev_id);
+            const query = `('${car.dev_id}', ${point[0]}, ${
+                point[1]
+            }, ${tm}, '${car.dri}', '${highwayName}', ${Date.now()})`;
+            const reportKey = `report:${car.dev_id}:${car.ref_id}:${tm}`;
 
-        if (match && tm - match < 300000) return;
+            const keys = await redisClient.hGetAll('report');
+            const match = Object.keys(keys)?.pop()?.split(':')?.pop();
 
-        await redisClient.hSet('report', reportKey, query);
+            if (match && tm - match < 300000) return;
 
-        console.log(
-            `Xe ${car.dev_id} đi vào ${highwayName} ${
-                car.resync === '1' ? 'resync' : car.resync
-            }`,
-        );
+            await redisClient.hSet('report', reportKey, query);
 
-        car.highway_name = highwayName;
+            console.log(
+                `Xe ${car.dev_id} đi vào ${highwayName} ${
+                    car.resync === '1' ? 'resync' : car.resync
+                }`,
+            );
+
+            car.highway_name = highwayName;
+        } catch (error) {
+            console.log(error);
+        }
     },
 
     initData: () => {
@@ -97,16 +98,6 @@ const tollboth = {
                 })
                 .filter((buffer) => buffer !== null);
 
-            // const line = turf.lineString(
-            //     nodes.map((node) => [node[1], node[0]]),
-            // );
-            // const bufferedLine = turf.buffer(bufferedLineCoords, 15, { units: 'meters' });
-            // bufferedLineCoords =
-            //     bufferedLine?.geometry.coordinates[0].map((coord) => [
-            //         coord[1],
-            //         coord[0],
-            //     ]);
-
             return {
                 id: index,
                 ref: 'Trạm thu phí',
@@ -157,28 +148,29 @@ const tollboth = {
 
     sendReport: () => {
         setInterval(async () => {
-            const keys = await redisClient.keys('report:*');
-            if (keys.length > 0) {
-                console.log(`Đang gửi ${keys.length} báo cáo`);
-                for (const key of keys) {
-                    const query = await redisClient.get(key);
-                    con.query(query, async (err, result) => {
-                        if (err) {
-                            console.log(err);
-                        } else {
-                            await redisClient.del(key);
-                        }
-                    });
-                }
-                console.log(`Đã gửi ${keys.length} báo cáo`);
+            let query = `INSERT INTO report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at) VALUES`;
+            const keys = await redisClient.hGetAll('report');
+
+            if (keys && Object.keys(keys).length > 0) {
+                console.log(`Đang gửi ${Object.keys(keys).length} báo cáo`);
+                Object.keys(keys).forEach((key) => (query += keys[key]));
+                con.query(query, async (err, result) => {
+                    if (err) {
+                        console.log(err);
+                    } else {
+                        Object.keys(keys).forEach(async (key) => {
+                            await redisClient.hDel('report', key);
+                        });
+                    }
+                });
+                console.log(`Đã gửi ${Object.keys(keys).length} báo cáo`);
             }
-        }, 60000);
+        }, 10000);
     },
 
     report: async (cars, tollboths, message) => {
         try {
-            const data_vid = JSON.parse(message.toString());
-            if (!data_vid[0] || data?.length === 0) return;
+            if (!tollboth.isValidData(message)) return;
             const {
                 tm,
                 driJn: dri,
@@ -189,20 +181,7 @@ const tollboth = {
                 mlng,
                 sp,
                 state,
-            } = data_vid[0];
-            if (
-                !tm ||
-                !dri ||
-                !resync ||
-                !vid ||
-                !id ||
-                !mlat ||
-                !mlng ||
-                !sp ||
-                !state
-            ) {
-                return;
-            }
+            } = tollboth?.isValidData(message);
 
             const point = [Number(mlat), Number(mlng)];
 
@@ -216,76 +195,53 @@ const tollboth = {
             for (let wayId of boundList) {
                 const way = data?.[wayId];
                 const ref_id = Number(way?.id.split('-')[0]);
+                // const key = `${vid}-${ref_id}-${resync}`;
+                const key = vid;
 
-                cars[id] = {
-                    ref_id,
-                    vid: vid,
-                    dev_id: id,
-                    resync: resync,
-                    dri: dri,
-                    state: isPointInBounds(point, way?.buffer_geometry),
-                    highway_name: way?.name,
-                    isStopChecked: false,
-                };
+                const inBounds = isPointInBounds(point, way?.buffer_geometry);
 
-                if (cars[id].state) {
-                    tollboth.insertReport(point, tm, way?.name);
+                if (!cars[key]) {
+                    const car = {
+                        ref_id,
+                        vid: vid,
+                        dev_id: id,
+                        resync: resync,
+                        dri: dri,
+                        state: inBounds,
+                        highway_name: way?.name,
+                        isStopChecked: false,
+                    };
+                    if (inBounds && process.indexOf(car.dev_id) === -1) {
+                        tollboth.insertReport(car, point, tm, way?.name);
+                        cars[key] = car;
+                        process.splice(process.indexOf(car.dev_id), 1);
+                    } else if (!inBounds) {
+                        cars[key] = car;
+                    }
                 } else {
+                    const car = cars[key];
+
+                    // if (car.ref_id === ref_id && car.resync === resync) {
+
+                    // }
+                    const isInWarning = !car.state && inBounds;
+                    const isOutWarning = car.state && !inBounds;
+
+                    if (isInWarning && process.indexOf(car.dev_id) === -1) {
+                        tollboth.insertReport(car, point, tm, way?.name);
+                        process.splice(process.indexOf(car.dev_id), 1);
+                    } else if (isOutWarning) {
+                        console.log(
+                            `Xe ${car.dev_id} đi ra ${car.highway_name} ${
+                                car.resync === 1 ? 'resync' : car.resync
+                            }`,
+                        );
+                    }
+
+                    car.state = inBounds;
+                    car.isStopChecked =
+                        state?.toString() === '2' && Number(sp) <= 0;
                 }
-
-                // const carIndex = cars.findIndex(
-                //     (car) =>
-                //         car.vid === vid &&
-                //         car.ref_id === ref_id &&
-                //         car.resync === resync,
-                // );
-
-                // const inBounds = isPointInBounds(point, way?.buffer_geometry);
-
-                // if (resync === '1' && inBounds)
-                //     console.log('có resync ở trong trạm thu phí');
-
-                // if (carIndex === -1) {
-                //     const car = {
-                //         ref_id,
-                //         vid: vid,
-                //         dev_id: id,
-                //         resync: resync,
-                //         dri: dri,
-                //         state: inBounds,
-                //         highway_name: way?.name,
-
-                //         isStopChecked: false,
-                //     };
-                //     if (inBounds && process.indexOf(car.dev_id) === -1) {
-                //         tollboth.insertReport(car, point, tm, way?.name);
-                //         cars.push(car);
-                //         process.splice(process.indexOf(car.dev_id), 1);
-                //     } else if (!inBounds) {
-                //         cars.push(car);
-                //     }
-                // } else {
-                //     const car = cars[carIndex];
-
-                //     if (car.ref_id === ref_id && car.resync === resync) {
-                //  const isInWarning = !car.state && inBounds;
-                // const isOutWarning = car.state && !inBounds;
-
-                // if (isInWarning && process.indexOf(car.dev_id) === -1) {
-                //     tollboth.insertReport(car, point, tm, way?.name);
-                //     process.splice(process.indexOf(car.dev_id), 1);
-                // } else if (isOutWarning) {
-                //     console.log(
-                //         `Xe ${car.dev_id} đi ra ${car.highway_name} ${
-                //             car.resync === '1' ? 'resync' : car.resync
-                //         }`,
-                //     );
-                // }
-
-                // car.state = inBounds;
-                // car.isStopChecked = state === '2' && Number(sp) <= 0;
-                //     }
-                // }
             }
         } catch (error) {
             console.log(error);
@@ -316,6 +272,37 @@ const tollboth = {
                 }
             });
         });
+    },
+
+    isValidData: (message) => {
+        const data_vid = JSON.parse(message.toString());
+        if (!data_vid[0] || data_vid?.length === 0) return;
+        const {
+            tm,
+            driJn: dri,
+            resync,
+            vid,
+            id,
+            mlat,
+            mlng,
+            sp,
+            state,
+        } = data_vid[0];
+        if (
+            !tm ||
+            !dri ||
+            !resync ||
+            !vid ||
+            !id ||
+            !mlat ||
+            !mlng ||
+            !sp ||
+            !state
+        ) {
+            return;
+        }
+
+        return data_vid[0];
     },
 };
 
