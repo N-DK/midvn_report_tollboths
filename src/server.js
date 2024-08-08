@@ -35,12 +35,12 @@ redisClient.connect();
 
 // Connect DB, then start server
 connectDB().then(async () => {
-    const mqttService = new MQTTService(process.env.MQTT_HOST, null, null);
-    await mqttService.initialize();
-    mqttService.connect();
-    mqttService.subscribe('live/status');
+    // const mqttService = new MQTTService(process.env.MQTT_HOST, null, null);
+    // await mqttService.initialize();
+    // mqttService.connect();
+    // mqttService.subscribe('live/status');
 
-    tollboth.sendReport();
+    // tollboth.sendReport();
 
     route(app);
 

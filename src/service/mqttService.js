@@ -10,7 +10,7 @@ class MQTTService {
         this.host = host;
         this.messageCallback = messageCallback;
         this.io = io;
-        this.cars = [];
+        this.cars = {};
     }
 
     async initialize() {
@@ -41,6 +41,19 @@ class MQTTService {
 
         // Call the message callback function when message arrived
         this.mqttClient.on('message', (topic, message) => {
+            const data_vid = JSON.parse(message.toString());
+
+            // if (
+            //     this.cars.some(
+            //         (car) =>
+            //             car.dev_id === data_vid[0]?.id &&
+            //             car.isStopChecked &&
+            //             data_vid[0]?.state === '2' &&
+            //             Number(data_vid[0]?.sp) <= 0,
+            //     )
+            // )
+            //     return;
+
             tollboth.report(this.cars, this.highways, message);
             if (this.messageCallback) this.messageCallback(topic, message);
         });
