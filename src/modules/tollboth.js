@@ -14,24 +14,48 @@ const tollboth = {
     insertReport: async (car, point, tm, highwayName) => {
         try {
             process.push(car.dev_id);
+            // create query
             const query = `('${car.dev_id}', ${point[0]}, ${
                 point[1]
             }, ${tm}, '${car.dri}', '${highwayName}', ${Date.now()})`;
+
+            // create report key
             const reportKey = `report:${car.dev_id}:${car.ref_id}:${tm}`;
 
+            // check if the car has been reported in the last 5 minutes
             const keys = await redisClient.hGetAll('report');
-            const match = Object.keys(keys)?.pop()?.split(':')?.pop();
 
-            if (match && tm - match < 300000) return;
+            const keyFounds = Object.keys(keys).filter((key) =>
+                key.includes(`report:${car.dev_id}:${car.ref_id}`),
+            );
 
+            keyFounds.sort((a, b) => {
+                return Number(b.split(':')[3]) - Number(a.split(':')[3]);
+            });
+
+            const reportTime = keyFounds?.[0]?.split(':')?.[3];
+
+            if (reportTime && Math.abs(tm - reportTime) < 300000) return;
+
+            const reports = await tollboth.getReportByImeiAndName(
+                car.dev_id,
+                highwayName,
+            );
+
+            if (reports.length > 0) {
+                const reportTime = reports[0].start_time;
+                if (Math.abs(tm - reportTime) < 300000) return;
+            }
+            // ----------------------------
+
+            // save report to redis
             await redisClient.hSet('report', reportKey, query);
 
             console.log(
-                `Xe ${car.dev_id} đi vào ${highwayName} ${
-                    car.resync === '1' ? 'resync' : car.resync
-                }`,
+                `Xe ${car.dev_id} đi vào ${highwayName} ${point[0]}, ${
+                    point[1]
+                } ${car.resync === '1' ? 'resync' : ''}`,
             );
-
             car.highway_name = highwayName;
         } catch (error) {
             console.log(error);
@@ -127,20 +151,17 @@ const tollboth = {
             };
         });
 
-        // insert into db
+        var query = `INSERT INTO tbl_tollboths (id, name) VALUES `;
         tollBoth.forEach((node) => {
-            const query = `INSERT INTO tollboths (id, ref, hData, keyData, highways) VALUES ('${
-                node.id
-            }', '${node.ref}', '${JSON.stringify(
-                node.hData,
-            )}', '${JSON.stringify(node.keyData)}', '${JSON.stringify(
-                node.highways,
-            )}')`;
-            con.query(query, (err, result) => {
-                if (err) {
-                    console.log(err);
-                }
-            });
+            query += `(${Number(node.id)}, '${
+                Object.values(node.hData).pop().name
+            }'),`;
+        });
+        query = query.slice(0, -1);
+        con.query(query, (err, result) => {
+            if (err) {
+                console.log(err);
+            }
         });
 
         return tollBoth;
@@ -148,12 +169,16 @@ const tollboth = {
 
     sendReport: () => {
         setInterval(async () => {
-            let query = `INSERT INTO report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at) VALUES`;
+            let query = `INSERT INTO report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at) VALUES `;
             const keys = await redisClient.hGetAll('report');
 
             if (keys && Object.keys(keys).length > 0) {
-                console.log(`Đang gửi ${Object.keys(keys).length} báo cáo`);
-                Object.keys(keys).forEach((key) => (query += keys[key]));
+                Object.keys(keys).forEach((key) => {
+                    query += `${keys[key]},`;
+                });
+
+                query = query.slice(0, -1);
+
                 con.query(query, async (err, result) => {
                     if (err) {
                         console.log(err);
@@ -195,8 +220,7 @@ const tollboth = {
             for (let wayId of boundList) {
                 const way = data?.[wayId];
                 const ref_id = Number(way?.id.split('-')[0]);
-                // const key = `${vid}-${ref_id}-${resync}`;
-                const key = vid;
+                const key = `${vid}-${resync}`;
 
                 const inBounds = isPointInBounds(point, way?.buffer_geometry);
 
@@ -209,7 +233,8 @@ const tollboth = {
                         dri: dri,
                         state: inBounds,
                         highway_name: way?.name,
-                        isStopChecked: false,
+
+                        isStopChecked: true,
                     };
                     if (inBounds && process.indexOf(car.dev_id) === -1) {
                         tollboth.insertReport(car, point, tm, way?.name);
@@ -221,9 +246,6 @@ const tollboth = {
                 } else {
                     const car = cars[key];
 
-                    // if (car.ref_id === ref_id && car.resync === resync) {
-
-                    // }
                     const isInWarning = !car.state && inBounds;
                     const isOutWarning = car.state && !inBounds;
 
@@ -233,14 +255,16 @@ const tollboth = {
                     } else if (isOutWarning) {
                         console.log(
                             `Xe ${car.dev_id} đi ra ${car.highway_name} ${
-                                car.resync === 1 ? 'resync' : car.resync
+                                point[0]
+                            } ${point[1]} ${
+                                car.resync === '1' ? 'resync' : ''
                             }`,
                         );
                     }
 
                     car.state = inBounds;
                     car.isStopChecked =
-                        state?.toString() === '2' && Number(sp) <= 0;
+                        state?.toString() !== '3' && Number(sp) <= 0;
                 }
             }
         } catch (error) {
@@ -249,7 +273,20 @@ const tollboth = {
     },
 
     getAllReports: async (offset, limit) => {
-        const query = `SELECT * FROM report_tollboths LIMIT ${limit} OFFSET ${offset}`;
+        const query = `SELECT r.imei, r.lat, r.lng, r.start_time, t.name, f.fee, r.dri FROM report_tollboths r JOIN tbl_tollboths t ON r.tollboth_name = t.name JOIN tbl_tollboths_vehicle_fee f ON t.id = f.tollboth_id AND vehicle_id = 15 LIMIT ${limit} OFFSET ${offset}`;
+        return new Promise((resolve, reject) => {
+            con.query(query, (err, result) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+    },
+
+    getReportByImeiAndName: async (imei, name) => {
+        const query = `SELECT * FROM report_tollboths WHERE imei = '${imei}' AND tollboth_name = '${name}' ORDER BY start_time DESC`;
         return new Promise((resolve, reject) => {
             con.query(query, (err, result) => {
                 if (err) {
@@ -274,31 +311,100 @@ const tollboth = {
         });
     },
 
+    addFee: async (tollboth_id, payload) => {
+        let query = `INSERT INTO tbl_tollboths_vehicle_fee (tollboth_id, vehicle_id, fee) VALUES `;
+
+        payload.forEach((item) => {
+            query += `(${tollboth_id}, ${item.id}, ${item.fee}),`;
+        });
+
+        query = query.slice(0, -1);
+
+        return new Promise((resolve, reject) => {
+            con.query(query, (err, result) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+    },
+
+    updateFee: async (tollboth_id, payload) => {
+        let query = `UPDATE tbl_tollboths_vehicle_fee SET fee = CASE vehicle_id `;
+        payload.forEach((item) => {
+            query += `WHEN ${item.id} THEN ${item.fee} `;
+        });
+
+        query += `END, update_at = ${Date.now()} WHERE vehicle_id IN (${payload
+            .map((item) => item.id)
+            .join(',')})`;
+        query += ` AND tollboth_id = ${tollboth_id} AND is_editable = 1`;
+
+        return new Promise((resolve, reject) => {
+            con.query(query, (err, result) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+    },
+
+    async getReports(req, res, includeFee) {
+        let { offset, limit, imei, start_date, end_date } = req.query;
+        offset = parseInt(offset, 10) || 0;
+        limit = parseInt(limit, 10) || 10;
+
+        if (!imei || !start_date || !end_date) {
+            return res.status(400).json({
+                result: false,
+                status: 500,
+                message: 'Đã xảy ra lỗi',
+                errors: [],
+            });
+        }
+
+        imei = imei.split(',');
+        start_date = parseInt(start_date, 10);
+        end_date = parseInt(end_date, 10);
+
+        try {
+            const totalReports = await tollboth.countAllReports();
+            let reports = await tollboth.getAllReports(offset, limit);
+
+            reports = reports.filter(
+                (report) =>
+                    imei.includes(report.imei) &&
+                    report.start_time >= start_date &&
+                    report.start_time <= end_date,
+            );
+
+            const totalPage = Math.ceil(totalReports / limit);
+
+            if (!includeFee) {
+                reports = reports.map(({ fee, ...rest }) => rest);
+            }
+
+            return res.status(200).json({
+                result: true,
+                message: 'Lấy dữ liệu thành công',
+                status: 200,
+                total_page: totalPage,
+                data: reports,
+            });
+        } catch (error) {
+            return res.status(500).json({ message: error.message });
+        }
+    },
+
     isValidData: (message) => {
         const data_vid = JSON.parse(message.toString());
         if (!data_vid[0] || data_vid?.length === 0) return;
-        const {
-            tm,
-            driJn: dri,
-            resync,
-            vid,
-            id,
-            mlat,
-            mlng,
-            sp,
-            state,
-        } = data_vid[0];
-        if (
-            !tm ||
-            !dri ||
-            !resync ||
-            !vid ||
-            !id ||
-            !mlat ||
-            !mlng ||
-            !sp ||
-            !state
-        ) {
+        const { tm, resync, vid, id, mlat, mlng, sp, state } = data_vid[0];
+        if (!tm || !resync || !vid || !id || !mlat || !mlng || !sp || !state) {
             return;
         }
 

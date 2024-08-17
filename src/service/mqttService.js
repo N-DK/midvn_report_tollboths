@@ -42,19 +42,19 @@ class MQTTService {
         // Call the message callback function when message arrived
         this.mqttClient.on('message', (topic, message) => {
             const data = JSON.parse(message.toString());
-            const vid = data[0]?.vid;
-            const sp = data[0]?.sp;
-            const state = data[0]?.state;
-            const lat = data[0]?.mlat;
-            const lng = data[0]?.mlng;
+            if (!data[0]) return;
+            const { vid, sp, state, mlat: lat, mlng: lng, resync } = data[0];
+
             if (
-                state?.toString() === '2' &&
+                state?.toString() !== '3' &&
                 Number(sp) <= 0 &&
-                this.cars[vid]?.isStopChecked
+                this.cars[`${vid}-${resync}`]?.isStopChecked
             ) {
-                console.log(
-                    `Car's stop checked ${this.cars[vid].vid} with speed ${sp} state ${state} lat ${lat} lng ${lng}`,
-                );
+                // console.log(
+                //     `Car's stop checked ${
+                //         this.cars[`${vid}-${resync}`]?.vid
+                //     } with speed ${sp} state ${state} ${lat}, ${lng}`,
+                // );
                 return;
             }
 

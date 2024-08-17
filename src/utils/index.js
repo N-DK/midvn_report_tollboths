@@ -71,9 +71,13 @@ function createPromise(col, req) {
 
     for (let i = 0; i < length; i++) {
         const filePath = path.join(`./src/common/${col}`, `${col}-${i}.json`);
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        try {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-        results.push(data);
+            results.push(data);
+        } catch (error) {
+            // console.error(error);
+        }
     }
 
     return results;
