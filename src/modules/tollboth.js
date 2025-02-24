@@ -169,7 +169,7 @@ const tollboth = {
 
     sendReport: () => {
         setInterval(async () => {
-            let query = `INSERT INTO report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at) VALUES `;
+            let query = `INSERT INTO tbl_report_tollboths (imei, lat, lng, start_time, dri, tollboth_name, create_at) VALUES `;
             const keys = await redisClient.hGetAll('report');
 
             if (keys && Object.keys(keys).length > 0) {
@@ -273,7 +273,7 @@ const tollboth = {
     },
 
     getAllReports: async (offset, limit) => {
-        const query = `SELECT r.imei, r.lat, r.lng, r.start_time, t.name, f.fee, r.dri FROM report_tollboths r JOIN tbl_tollboths t ON r.tollboth_name = t.name JOIN tbl_tollboths_vehicle_fee f ON t.id = f.tollboth_id AND vehicle_id = 15 LIMIT ${limit} OFFSET ${offset}`;
+        const query = `SELECT r.imei, r.lat, r.lng, r.start_time, t.name, f.fee, r.dri FROM tbl_report_tollboths r JOIN tbl_tollboths t ON r.tollboth_name = t.name JOIN tbl_tollboths_vehicle_fee f ON t.id = f.tollboth_id AND vehicle_id = 15 LIMIT ${limit} OFFSET ${offset}`;
         return new Promise((resolve, reject) => {
             con.query(query, (err, result) => {
                 if (err) {
@@ -286,7 +286,7 @@ const tollboth = {
     },
 
     getReportByImeiAndName: async (imei, name) => {
-        const query = `SELECT * FROM report_tollboths WHERE imei = '${imei}' AND tollboth_name = '${name}' ORDER BY start_time DESC`;
+        const query = `SELECT * FROM tbl_report_tollboths WHERE imei = '${imei}' AND tollboth_name = '${name}' ORDER BY start_time DESC`;
         return new Promise((resolve, reject) => {
             con.query(query, (err, result) => {
                 if (err) {
@@ -299,7 +299,7 @@ const tollboth = {
     },
 
     countAllReports: async () => {
-        const query = `SELECT COUNT(*) as total FROM report_tollboths`;
+        const query = `SELECT COUNT(*) as total FROM tbl_report_tollboths`;
         return new Promise((resolve, reject) => {
             con.query(query, (err, result) => {
                 if (err) {
